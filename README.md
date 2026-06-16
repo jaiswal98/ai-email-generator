@@ -205,3 +205,7 @@ You can add these later:
 - WhatsApp/LinkedIn message generator
 - Team workspace and usage limits
 - Stripe subscription plans
+
+##Apprication Deployed on Railway.
+
+Link - https://ai-email-generator-production-a4b5.up.railway.app/
