@@ -6,7 +6,7 @@ A production-style FastAPI application that generates professional emails using 
 
 - User registration and login
 - JWT-based authentication
-- AI email generation using OpenAI
+- AI email generation using OpenAI or local Ollama models
 - Email tone, purpose, recipient type, language, and length options
 - Generated subject line, email body, CTA, and quality score
 - Save generated emails in database
@@ -22,7 +22,7 @@ A production-style FastAPI application that generates professional emails using 
 - Backend: FastAPI
 - Database: SQLAlchemy with SQLite/PostgreSQL
 - Authentication: JWT + bcrypt password hashing
-- AI: OpenAI API
+- AI: OpenAI API or Ollama with local Llama models
 - Frontend: HTML, CSS, JavaScript
 - Deployment: Docker / Render / Railway / VPS
 
@@ -85,11 +85,41 @@ For Mac/Linux:
 cp .env.example .env
 ```
 
-Update this in `.env`:
+Update this in `.env`.
+
+For OpenAI:
 
 ```env
 SECRET_KEY="use-a-long-random-secret"
+AI_PROVIDER="openai"
 OPENAI_API_KEY="your-openai-api-key"
+```
+
+For Ollama with a local Llama model:
+
+```env
+SECRET_KEY="use-a-long-random-secret"
+AI_PROVIDER="ollama"
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="llama3.2"
+```
+
+Install Ollama from:
+
+```text
+https://ollama.com
+```
+
+Then pull a model:
+
+```bash
+ollama pull llama3.2
+```
+
+Make sure Ollama is running before generating emails:
+
+```bash
+ollama serve
 ```
 
 ### 4. Run the application
@@ -116,6 +146,14 @@ Change your `.env` database URL to:
 
 ```env
 DATABASE_URL="postgresql+psycopg2://postgres:postgres@db:5432/ai_email_generator"
+```
+
+If you run the FastAPI app in Docker and Ollama on your host machine, `localhost`
+inside the container does not point to your host. Use a reachable Ollama URL for
+`OLLAMA_BASE_URL`, or add Ollama as a Docker Compose service and set:
+
+```env
+OLLAMA_BASE_URL="http://ollama:11434"
 ```
 
 Then run:
@@ -150,6 +188,7 @@ Before deploying publicly:
 - Use PostgreSQL, not SQLite
 - Set `ENVIRONMENT=production`
 - Restrict `ALLOWED_ORIGINS` to your real frontend domain
+- If using Ollama, keep the Ollama server private and do not expose it publicly
 - Use HTTPS
 - Store environment variables in your hosting dashboard
 - Add database migrations with Alembic for large production use

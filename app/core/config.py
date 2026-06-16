@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     rate_limit: str = "20/minute"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
 
     model_config = SettingsConfigDict(
         env_file=".env",

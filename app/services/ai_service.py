@@ -1,7 +1,9 @@
 import json
+import os
 import re
 from dataclasses import dataclass
 
+import httpx
 from openai import OpenAI
 
 from app.core.config import get_settings
@@ -58,15 +60,8 @@ def _fallback_email(payload: EmailGenerateRequest) -> AIEmailResult:
     )
 
 
-def generate_email_with_ai(payload: EmailGenerateRequest) -> AIEmailResult:
-    settings = get_settings()
-
-    if settings.ai_provider.lower() != "openai" or not settings.openai_api_key:
-        return _fallback_email(payload)
-
-    client = OpenAI(api_key=settings.openai_api_key)
-
-    system_prompt = """
+def _system_prompt() -> str:
+    return """
 You are an expert business communication assistant.
 Generate polished, ready-to-send emails.
 Return ONLY valid JSON with these keys:
@@ -82,7 +77,9 @@ Rules:
 - Do not include markdown.
 """.strip()
 
-    user_prompt = f"""
+
+def _user_prompt(payload: EmailGenerateRequest) -> str:
+    return f"""
 Purpose: {payload.purpose}
 Recipient type: {payload.recipient_type}
 Tone: {payload.tone}
@@ -94,25 +91,70 @@ Key points:
 {payload.key_points}
 """.strip()
 
+
+def _ollama_prompt(payload: EmailGenerateRequest) -> str:
+    return f"{_system_prompt()}\n\n{_user_prompt(payload)}"
+
+
+def _result_from_data(data: dict, payload: EmailGenerateRequest) -> AIEmailResult:
+    return AIEmailResult(
+        subject=str(data.get("subject") or f"Regarding {payload.purpose[:70]}").strip(),
+        body=str(data.get("body") or "").strip(),
+        call_to_action=(str(data.get("call_to_action")).strip() if data.get("call_to_action") else None),
+        score=_validate_score(data.get("score")),
+        improvement_tips=[str(item) for item in data.get("improvement_tips", [])][:5],
+    )
+
+
+def generate_email_with_ollama(payload: EmailGenerateRequest) -> AIEmailResult:
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+    try:
+        response = httpx.post(
+            f"{base_url}/api/generate",
+            json={
+                "model": model,
+                "prompt": _ollama_prompt(payload),
+                "format": "json",
+                "stream": False,
+                "options": {"temperature": 0.6},
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+        data = _extract_json(response.json().get("response", "{}"))
+        return _result_from_data(data, payload)
+    except Exception as exc:
+        fallback = _fallback_email(payload)
+        fallback.improvement_tips.insert(0, f"Ollama provider error: {type(exc).__name__}")
+        return fallback
+
+
+def generate_email_with_ai(payload: EmailGenerateRequest) -> AIEmailResult:
+    settings = get_settings()
+
+    if settings.ai_provider.lower() == "ollama":
+        return generate_email_with_ollama(payload)
+
+    if settings.ai_provider.lower() != "openai" or not settings.openai_api_key:
+        return _fallback_email(payload)
+
+    client = OpenAI(api_key=settings.openai_api_key)
+
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "system", "content": _system_prompt()},
+                {"role": "user", "content": _user_prompt(payload)},
             ],
             temperature=0.6,
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content or "{}"
         data = _extract_json(content)
-        return AIEmailResult(
-            subject=str(data.get("subject") or f"Regarding {payload.purpose[:70]}").strip(),
-            body=str(data.get("body") or "").strip(),
-            call_to_action=(str(data.get("call_to_action")).strip() if data.get("call_to_action") else None),
-            score=_validate_score(data.get("score")),
-            improvement_tips=[str(item) for item in data.get("improvement_tips", [])][:5],
-        )
+        return _result_from_data(data, payload)
     except Exception as exc:
         fallback = _fallback_email(payload)
         fallback.improvement_tips.insert(0, f"AI provider error: {type(exc).__name__}")
